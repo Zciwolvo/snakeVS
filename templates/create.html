@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Room</title>
+</head>
+<body>
+    <h2>Create a Room</h2>
+    <p>Share this room code with your friend to invite them:</p>
+    <input type="text" id="room-code" value="{{ room_code }}" readonly>
+    <button onclick="copyRoomCode()">Copy Room Code</button>
+</body>
+<script>
+    function copyRoomCode() {
+        var copyText = document.getElementById("room-code");
+        copyText.select();
+        document.execCommand("copy");
+        alert("Room code copied to clipboard: " + copyText.value);
+    }
+</script>
+</html>

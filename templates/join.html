@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Join Room</title>
+</head>
+<body>
+    <h2>Join a Room</h2>
+    <p>Enter the room code provided by your friend:</p>
+    <input type="text" id="room-code">
+    <button onclick="joinRoom()">Join</button>
+</body>
+<script>
+    function joinRoom() {
+        var roomCode = document.getElementById("room-code").value;
+        if (roomCode) {
+            window.location.href = '/join/' + roomCode;
+        } else {
+            alert("Please enter a valid room code.");
+        }
+    }
+</script>
+</html>

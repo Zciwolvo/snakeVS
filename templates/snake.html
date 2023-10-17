@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Snake Game</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles/game.css') }}">
+</head>
+<body>
+    <h1>Snake Game</h1>
+    <h1 id="score">Score: 0</h1>
+    <div id="game-container">
+        <canvas id="game-board" width="600" height="600"></canvas>
+    </div>
+    <script src="{{ url_for('static', filename='scripts/game.js') }}"></script>
+</body>
+</html>
