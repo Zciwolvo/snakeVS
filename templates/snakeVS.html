@@ -8,15 +8,20 @@
     <h1>Snake Game</h1>
     <div id="game">
         <div id="game-container">
-            <h1 id="score">Score: 0</h1>
-            <canvas id="game-board" width="600" height="600"></canvas>
+            <h2 id="score-player1">Player 1 Score: {{ room_data['player1_state']['score'] }}</h2>
+            <canvas id="game-board-player1" width="300" height="600"></canvas>
         </div>
         <div id="game-container">
-            <h1 id="score">Score: 0</h1>
-            <canvas id="game-board" width="600" height="600"></canvas>
+            <h2 id="score-player2">Player 2 Score: {{ room_data['player2_state']['score'] }}</h2>
+            <canvas id="game-board-player2" width="300" height="600"></canvas>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='scripts/game.js') }}"></script>
-    <script src="{{ url_for('static', filename='scripts/server.js') }}"></script>
+    <script>
+        const room_data = {{ room_data|tojson}}
+        const roomCode = "{{ room_code }}";
+    </script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='scripts/player1handler.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/player2handler.js') }}"></script>
 </body>
 </html>

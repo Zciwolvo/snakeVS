@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lobby</title>
+</head>
+<body>
+    <h1>Lobby</h1>
+    
+    <div>
+        <button id="set-ready-button">Ready</button>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
+    <script>
+        const socket = io.connect('http://localhost:5000/'); // Change this to match your server's URL
+
+        // Check if both players are ready
+        let player1Ready = 0;
+        let player2Ready = 0;
+
+        // Replace this with your logic to determine if the current user is player 1 or 2
+        const isPlayer1 = true;
+        const roomCode = "{{ room_code }}";
+
+        // When the "Start Game" button is clicked
+        document.getElementById('set-ready-button').addEventListener('click', () => {
+            if (player1Ready && player2Ready) {
+                // Both players are ready, enable the "Start Game" button and signal the server to start the game
+                socket.emit('start_game', { roomCode });
+            }
+        });
+
+        // Listen for updates to readiness status
+        socket.on('player_ready/${roomCode}', (data) => {
+            if (data.isPlayer1) {
+                player1Ready = data.ready;
+            } else {
+                player2Ready = data.ready;
+            }
+            
+            // Enable the "Start Game" button if both players are ready
+            if (player1Ready && player2Ready) {
+                document.getElementById('set-ready-button').disabled = false;
+            } else {
+                document.getElementById('set-ready-button').disabled = true;
+            }
+        });
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            
+            if (parts.length === 2) {
+                return parts.pop().split(';').shift();
+            }
+        }
+        const sessionID = getCookie('sid');
+
+        // When the "Ready" button is clicked
+        document.getElementById('set-ready-button').addEventListener('click', () => {
+            // Toggle player's ready status
+            if (isPlayer1) {
+                player1Ready = !player1Ready;
+                socket.emit('set_ready_status/${roomCode}', { sessionID, isPlayer1, roomCode, ready: player1Ready });
+            } else {
+                player2Ready = !player2Ready;
+                socket.emit('set_ready_status', { sessionID, isPlayer1, roomCode, ready: player2Ready });
+            }
+
+            // Update the button text
+            document.getElementById('set-ready-button').textContent = isPlayer1
+                ? (player1Ready ? 'Unready' : 'Ready')
+                : (player2Ready ? 'Unready' : 'Ready');
+        });
+    </script>
+</body>
+</html>

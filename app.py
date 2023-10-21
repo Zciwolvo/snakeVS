@@ -1,9 +1,12 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, url_for, redirect, jsonify, make_response
 from flask_socketio import SocketIO, emit
 from uuid import uuid4
+import string
+import random
+
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Dictionary to manage rooms and game states
 rooms = {}
@@ -24,11 +27,6 @@ def snake():
     return render_template("snake.html")
 
 
-@app.route('/create_room')
-def create():
-    return render_template("create.html")
-
-
 @app.route('/join_room')
 def join():
     return render_template("join.html")
@@ -38,14 +36,27 @@ def join():
 
 
 def generate_room_code():
-    return uuid4()
+    res = ''.join(random.choices(string.ascii_uppercase +
+                                 string.digits, k=6))
+    return res
+
+
+def generate_sid():
+    res = ''.join(random.choices(string.ascii_uppercase +
+                                 string.digits, k=16))
+    return res
 
 
 # Define the initial game state
 initial_game_state = {
+    'sid': '',
+    'ready': 0,
     'snake': [{'x': 10, 'y': 10}],
     'food': {'x': 15, 'y': 15},
-    'score': 0
+    'dx': 1,
+    'dy': 0,
+    'score': 0,
+    'gameover': 0
 }
 
 # Route to create a room
@@ -54,51 +65,121 @@ initial_game_state = {
 @app.route('/create_room')
 def create_room():
     room_code = generate_room_code()
+    player1_sid = generate_sid()
+    response = make_response(
+        redirect(url_for('snake_vs', room_code=room_code)))
+    response.set_cookie('sid', player1_sid)
     rooms[room_code] = {
-        'player1_sid': request.sid,  # Session ID of the host
         'player1_state': initial_game_state,
-        'player2_sid': None,
         'player2_state': initial_game_state
     }
-    return room_code
+    rooms[room_code]['player1_state']['sid'] = player1_sid
+    rooms[room_code]['player1_state']['sid'] = None
+    if rooms[room_code]['player1_state']['sid'] is not None and rooms[room_code]['player2_state']['sid'] is not None:
+        return redirect(url_for('lobby', room_code=room_code))
+    else:
+        return render_template("create.html", room_code=room_code)
+
 
 # Route to join a room
 
 
 @app.route('/join_room/<room_code>')
 def join_room(room_code):
-    if room_code in rooms and rooms[room_code]['player2_sid'] is None:
-        # Session ID of the second player
-        rooms[room_code]['player2_sid'] = request.sid
-        return "Joined room successfully"
+    if room_code in rooms and rooms[room_code]['player2_state']['sid'] is None:
+        player2_sid = generate_sid()
+        response = make_response(
+            redirect(url_for('snake_vs', room_code=room_code)))
+        response.set_cookie('sid', player2_sid)
+        rooms[room_code]['player2_state']['sid'] = player2_sid
+
+        if rooms[room_code]['player1_state']['sid'] is not None and rooms[room_code]['player2_state']['sid'] is not None:
+            # Both players are present, move to snakeVS
+            return redirect(url_for('lobby', room_code=room_code))
+        else:
+            return render_template("join.html")
     else:
-        return "Room is full or does not exist"
-
-# Handle player input for player 1 in a room
+        return render_template("join.html")
 
 
-@socketio.on('player1_input', namespace='/snakeVS')
-def handle_player1_input(data):
+player1_ready = False
+player2_ready = False
+
+
+@app.route('/lobby/<room_code>')
+def lobby(room_code):
+    global player1_ready, player2_ready
+    return render_template("lobby.html", room_code=room_code, p1=player1_ready, p2=player2_ready)
+
+
+@app.route('/set_ready_status/<room_code>', methods=['POST'])
+def set_ready_status(room_code):
+    data = request.get_json()
+    sid = data.get('sid')
+    print("setting ready")
+
+    if room_code in rooms:
+        print("room: OK")
+        if rooms[room_code]['player1_state']['sid'] == sid:
+            print("P1: OK")
+            rooms[room_code]['player1_state']['ready'] = 1
+            return jsonify({'message': 'Player 1 is ready'})
+        elif rooms[room_code]['player2_state']['sid'] == sid:
+            print("P2: OK")
+            rooms[room_code]['player2_state']['ready'] = 1
+            return jsonify({'message': 'Player 2 is ready'})
+
+    return jsonify({'message': 'Player not found or room does not exist'})
+
+
+@app.route('/player_ready/<room_code>', methods=['POST'])
+def set_player_ready(room_code):
+    if rooms[room_code]['player1_state']['ready'] == 1 and rooms[room_code]['player2_state']['ready'] == 1:
+        return jsonify({'start_game': True})
+
+    return jsonify({'start_game': False})
+
+
+@app.route('/check_room_status/<room_code>')
+def check_room_status(room_code):
+    if room_code in rooms:
+        if rooms[room_code]['player1_state']['sid'] is not None and rooms[room_code]['player2_state']['sid'] is not None:
+            # Both players have joined
+            return jsonify({'status': 'ready'})
+
+    # Room is not ready yet
+    return jsonify({'status': 'waiting'})
+
+# Route for snakeVS
+
+
+@app.route('/snakeVS/<room_code>')
+def snake_vs(room_code):
+    if room_code in rooms:
+        return render_template("snakeVS.html", room_code=room_code, room_data=rooms[room_code])
+    else:
+        return "Room does not exist"
+
+
+# Handle player input for Player 1
+
+
+@socketio.on('player_update', namespace='/snakeVS')
+def handle_player_update(data):
     room_code = data['room_code']
-    player1_sid = rooms[room_code]['player1_sid']
-    # Update player 1's game state based on their input
+    player_data = data['data']
+    if room_code:
+        # Identify the current player's SID, for example, from their cookies
+        player_sid = request.cookies.get('player_sid')
 
-    # Emit the updated game state to player 1 using player1_sid
-    emit('game_state_update',
-         rooms[room_code]['player1_state'], namespace='/snakeVS', room=player1_sid)
+        # Check if the player is allowed to make this update
+        if player_sid == rooms[room_code]['player1_state']['sid']:
+            # Update player 1's state
+            rooms[room_code]['player1_state'] = player_data
 
-# Handle player input for player 2 in a room
-
-
-@socketio.on('player2_input', namespace='/snakeVS')
-def handle_player2_input(data):
-    room_code = data['room_code']
-    player2_sid = rooms[room_code]['player2_sid']
-    # Update player 2's game state based on their input
-
-    # Emit the updated game state to player 2 using player2_sid
-    emit('game_state_update',
-         rooms[room_code]['player2_state'], namespace='/snakeVS', room=player2_sid)
+            # Broadcast the updated data to all players in the room
+            emit('game_state_update', player_data,
+                 namespace='/snakeVS', room=room_code)
 
 
 if __name__ == '__main__':

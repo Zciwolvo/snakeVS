@@ -6,7 +6,7 @@
 <body>
     <h2>Create a Room</h2>
     <p>Share this room code with your friend to invite them:</p>
-    <input type="text" id="room-code" value="{{ room_code }}" readonly>
+    <p>Room Code: {{ room_code }}</p>
     <button onclick="copyRoomCode()">Copy Room Code</button>
 </body>
 <script>
@@ -16,5 +16,23 @@
         document.execCommand("copy");
         alert("Room code copied to clipboard: " + copyText.value);
     }
+        const roomCode = "{{ room_code }}";
+    
+    function checkRoomStatus() {
+        fetch(`/check_room_status/${roomCode}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'ready') {
+                    // Both players have joined, redirect to the game page
+                    window.location.href = `/lobby/${roomCode}`;
+                } else {
+                    // Room is not ready yet, continue checking
+                    setTimeout(checkRoomStatus, 100); // Check every 1 seconds
+                }
+            });
+    }
+    
+    // Start checking room status when the page loads
+    checkRoomStatus();
 </script>
 </html>
