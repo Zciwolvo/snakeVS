@@ -1,11 +1,13 @@
 from flask import Flask, request, render_template, url_for, redirect, jsonify, make_response
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 from uuid import uuid4
 import string
 import random
 
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Dictionary to manage rooms and game states
@@ -42,14 +44,12 @@ def generate_room_code():
 
 
 def generate_sid():
-    res = ''.join(random.choices(string.ascii_uppercase +
-                                 string.digits, k=16))
-    return res
+    return str(uuid4())
 
 
 # Define the initial game state
 initial_game_state = {
-    'sid': '',
+    'sid': None,
     'ready': 0,
     'snake': [{'x': 10, 'y': 10}],
     'food': {'x': 15, 'y': 15},
@@ -66,19 +66,21 @@ initial_game_state = {
 def create_room():
     room_code = generate_room_code()
     player1_sid = generate_sid()
-    response = make_response(
-        redirect(url_for('snake_vs', room_code=room_code)))
-    response.set_cookie('sid', player1_sid)
+
+    response = make_response(render_template(
+        "create.html", room_code=room_code))  # Render 'create.html'
+    response.set_cookie('sid', player1_sid, path="/")  # Set the 'sid' cookie
+
     rooms[room_code] = {
-        'player1_state': initial_game_state,
-        'player2_state': initial_game_state
+        'player1_state': initial_game_state.copy(),
+        'player2_state': initial_game_state.copy()
     }
+
     rooms[room_code]['player1_state']['sid'] = player1_sid
-    rooms[room_code]['player1_state']['sid'] = None
-    if rooms[room_code]['player1_state']['sid'] is not None and rooms[room_code]['player2_state']['sid'] is not None:
-        return redirect(url_for('lobby', room_code=room_code))
-    else:
-        return render_template("create.html", room_code=room_code)
+    # Set 'player2_state' to None
+    rooms[room_code]['player2_state']['sid'] = None
+
+    return response  # Return the response with the cookie set
 
 
 # Route to join a room
@@ -86,58 +88,63 @@ def create_room():
 
 @app.route('/join_room/<room_code>')
 def join_room(room_code):
+
     if room_code in rooms and rooms[room_code]['player2_state']['sid'] is None:
         player2_sid = generate_sid()
-        response = make_response(
-            redirect(url_for('snake_vs', room_code=room_code)))
-        response.set_cookie('sid', player2_sid)
+        response = make_response(render_template(
+            "join.html"))  # Render 'join.html'
+        # Set the 'sid' cookie
+        response.set_cookie('sid', player2_sid, path="/")
+
         rooms[room_code]['player2_state']['sid'] = player2_sid
+        print(rooms[room_code]['player2_state']['sid'])
 
         if rooms[room_code]['player1_state']['sid'] is not None and rooms[room_code]['player2_state']['sid'] is not None:
-            # Both players are present, move to snakeVS
-            return redirect(url_for('lobby', room_code=room_code))
+            # Both players are present, move to the 'lobby' page
+            response = make_response(render_template(
+                "lobby.html", room_code=room_code))  # Render 'join.html'
+            # Set the 'sid' cookie
+            print(
+                rooms[room_code]['player2_state']['sid'])
+            response.set_cookie('sid', player2_sid, path="/")
+            return response
         else:
-            return render_template("join.html")
+            return response  # Return the response with the cookie set
+
     else:
         return render_template("join.html")
 
 
-player1_ready = False
-player2_ready = False
-
-
 @app.route('/lobby/<room_code>')
 def lobby(room_code):
-    global player1_ready, player2_ready
-    return render_template("lobby.html", room_code=room_code, p1=player1_ready, p2=player2_ready)
+    print(rooms[room_code])
+    return render_template("lobby.html", room_code=room_code)
 
 
 @app.route('/set_ready_status/<room_code>', methods=['POST'])
 def set_ready_status(room_code):
     data = request.get_json()
     sid = data.get('sid')
-    print("setting ready")
 
     if room_code in rooms:
-        print("room: OK")
         if rooms[room_code]['player1_state']['sid'] == sid:
-            print("P1: OK")
             rooms[room_code]['player1_state']['ready'] = 1
             return jsonify({'message': 'Player 1 is ready'})
         elif rooms[room_code]['player2_state']['sid'] == sid:
-            print("P2: OK")
             rooms[room_code]['player2_state']['ready'] = 1
             return jsonify({'message': 'Player 2 is ready'})
 
     return jsonify({'message': 'Player not found or room does not exist'})
 
 
-@app.route('/player_ready/<room_code>', methods=['POST'])
+@app.route('/players_ready/<room_code>')
 def set_player_ready(room_code):
-    if rooms[room_code]['player1_state']['ready'] == 1 and rooms[room_code]['player2_state']['ready'] == 1:
-        return jsonify({'start_game': True})
+    if room_code in rooms:
+        if rooms[room_code]['player1_state']['ready'] == 1 and rooms[room_code]['player2_state']['ready'] == 1:
+            return jsonify({'status': 'ready'})
 
-    return jsonify({'start_game': False})
+        return jsonify({'status': 'waiting'})
+    return jsonify({'message': 'Room doesnt exist'})
 
 
 @app.route('/check_room_status/<room_code>')
@@ -168,18 +175,20 @@ def snake_vs(room_code):
 def handle_player_update(data):
     room_code = data['room_code']
     player_data = data['data']
+    # Include 'sid' in the data received from the client
+    player_sid = data['sid']
+
     if room_code:
-        # Identify the current player's SID, for example, from their cookies
-        player_sid = request.cookies.get('player_sid')
-
-        # Check if the player is allowed to make this update
         if player_sid == rooms[room_code]['player1_state']['sid']:
-            # Update player 1's state
             rooms[room_code]['player1_state'] = player_data
-
-            # Broadcast the updated data to all players in the room
-            emit('game_state_update', player_data,
-                 namespace='/snakeVS', room=room_code)
+            emit('game_state_update_p1', rooms[room_code]['player1_state'],
+                 namespace=fr'/snakeVS', room=room_code)
+        elif player_sid == rooms[room_code]['player2_state']['sid']:
+            rooms[room_code]['player2_state'] = player_data
+            emit('game_state_update_p2', rooms[room_code]['player2_state'],
+                 namespace=fr'/snakeVS', room=room_code)
+        else:
+            return jsonify({'message': "Incorrect session ID from one of the players"})
 
 
 if __name__ == '__main__':

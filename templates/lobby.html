@@ -10,10 +10,7 @@
         <button id="set-ready-button">Ready</button>
     </div>
     
-    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
     <script>
-        const socket = io.connect('http://localhost:5000/'); // Change this to match your server's URL
-
         // Check if both players are ready
         let player1Ready = 0;
         let player2Ready = 0;
@@ -21,30 +18,6 @@
         // Replace this with your logic to determine if the current user is player 1 or 2
         const isPlayer1 = true;
         const roomCode = "{{ room_code }}";
-
-        // When the "Start Game" button is clicked
-        document.getElementById('set-ready-button').addEventListener('click', () => {
-            if (player1Ready && player2Ready) {
-                // Both players are ready, enable the "Start Game" button and signal the server to start the game
-                socket.emit('start_game', { roomCode });
-            }
-        });
-
-        // Listen for updates to readiness status
-        socket.on('player_ready/${roomCode}', (data) => {
-            if (data.isPlayer1) {
-                player1Ready = data.ready;
-            } else {
-                player2Ready = data.ready;
-            }
-            
-            // Enable the "Start Game" button if both players are ready
-            if (player1Ready && player2Ready) {
-                document.getElementById('set-ready-button').disabled = false;
-            } else {
-                document.getElementById('set-ready-button').disabled = true;
-            }
-        });
 
         function getCookie(name) {
             const value = `; ${document.cookie}`;
@@ -55,23 +28,55 @@
             }
         }
         const sessionID = getCookie('sid');
+        console.log(sessionID)
 
-        // When the "Ready" button is clicked
+        // When the "Set Ready" button is clicked
         document.getElementById('set-ready-button').addEventListener('click', () => {
             // Toggle player's ready status
             if (isPlayer1) {
                 player1Ready = !player1Ready;
-                socket.emit('set_ready_status/${roomCode}', { sessionID, isPlayer1, roomCode, ready: player1Ready });
             } else {
                 player2Ready = !player2Ready;
-                socket.emit('set_ready_status', { sessionID, isPlayer1, roomCode, ready: player2Ready });
             }
 
             // Update the button text
             document.getElementById('set-ready-button').textContent = isPlayer1
                 ? (player1Ready ? 'Unready' : 'Ready')
                 : (player2Ready ? 'Unready' : 'Ready');
+
+            // Send a POST request to the server to set player readiness
+            fetch(`/set_ready_status/${roomCode}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sid: sessionID,
+                    isPlayer1,
+                    ready: isPlayer1 ? player1Ready : player2Ready,
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+            });
         });
+        function checkRoomStatus() {
+            fetch(`/players_ready/${roomCode}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'ready') {
+                        // Both players have joined, redirect to the game page
+                        window.location.href = `/snakeVS/${roomCode}`;
+                    } else {
+                        // Room is not ready yet, continue checking
+                        setTimeout(checkRoomStatus, 100); // Check every 1 seconds
+                    }
+                });
+    }
+    
+    // Start checking room status when the page loads
+    checkRoomStatus();
     </script>
 </body>
 </html>

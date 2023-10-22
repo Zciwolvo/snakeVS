@@ -20,3 +20,7 @@ body {
     height: 600px;
 }
 
+#score-player1, #score-player2 {
+    position: absolute;
+}
+

@@ -1,21 +1,18 @@
 const canvas_p1 = document.getElementById('game-board-player1');
 const context_p1 = canvas_p1.getContext('2d');
-const socket_p1 = io.connect('http://localhost:5000/snakeVS');
+
+const socket = io.connect(`http://localhost:5000/snakeVS`);
+
+socket.on('game_state_update_p1', (updatedGameState) => {
+    player1_state = updatedGameState;
+});
 
 // Snake variables
-let player1_state = room_data['player1_state'];
-let player1_sid = room_data['player1_sid'];
+let player1_state = Object.assign({}, room_data['player1_state']);
+let player1_sid = room_data['player1_state']['sid'];
 
-const gridSize = 20;
-
-let data_p1 = {
-    snake: player1_state['snake'],
-    food: player1_state['food'],
-    dx: player1_state['dx'],
-    dy: player1_state['dy'],
-    score: player1_state['score'],
-    gameover: player1_state['gameover'],
-};
+let gridSize = 20;
+let speed = 500;
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -27,26 +24,24 @@ function getCookie(name) {
 }
 const sessionID_c1 = getCookie('sid');
 
-// Speed control
-const speed = 100; // Adjust this value to control the speed (milliseconds per frame)
-
 // Keyboard event listener for direction control
 document.addEventListener('keydown', (event) => {
     if (sessionID_c1 === player1_sid){
-        if (event.key === 'ArrowUp' && data_p1['dy'] === 0) {
-            data_p1['dx'] = 0;
-            data_p1['dy'] = -1; // Up
-        } else if (event.key === 'ArrowDown' && data_p1['dy'] === 0) {
-            data_p1['dx'] = 0;
-            data_p1['dy'] = 1;  // Down
-        } else if (event.key === 'ArrowLeft' && data_p1['dx'] === 0) {
-            data_p1['dx'] = -1; // Left
-            data_p1['dy'] = 0;
-        } else if (event.key === 'ArrowRight' && data_p1['dx'] === 0) {
-            data_p1['dx'] = 1;  // Right
-            data_p1['dy'] = 0;
+        if (event.key === 'ArrowUp' && player1_state['dy'] === 0) {
+            player1_state['dx'] = 0;
+            player1_state['dy'] = -1; // Up
+        } else if (event.key === 'ArrowDown' && player1_state['dy'] === 0) {
+            player1_state['dx'] = 0;
+            player1_state['dy'] = 1;  // Down
+        } else if (event.key === 'ArrowLeft' && player1_state['dx'] === 0) {
+            player1_state['dx'] = -1; // Left
+            player1_state['dy'] = 0;
+        } else if (event.key === 'ArrowRight' && player1_state['dx'] === 0) {
+            player1_state['dx'] = 1;  // Right
+            player1_state['dy'] = 0;
         }
     }
+    socket.emit('player_update', { room_code: roomCode, data: player1_state, sid: sessionID_c1 });
 
 });
 
@@ -57,46 +52,45 @@ function draw() {
     drawFood();
     updateSnake();
     checkCollision();
+    socket.emit('player_update', { room_code: roomCode, data: player1_state, sid: sessionID_c1 });
     setTimeout(draw, speed); // Call the draw function after a delay (controlled by the speed variable)
 }
 
 function drawSnake() {
     context_p1.fillStyle = 'green';
-    data_p1['snake'].forEach(segment => {
+    player1_state['snake'].forEach(segment => {
         context_p1.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
     });
 }
 
 function drawFood() {
     context_p1.fillStyle = 'red';
-    context_p1.fillRect(data_p1['food'].x * gridSize, data_p1['food'].y * gridSize, gridSize, gridSize);
+    context_p1.fillRect(player1_state['food'].x * gridSize, player1_state['food'].y * gridSize, gridSize, gridSize);
 }
 
 function updateSnake() {
-    const head = { x: data_p1['snake'][0].x + data_p1['dx'], y: data_p1['snake'][0].y + data_p1['dy'] };
-    data_p1['snake'].unshift(head);
-    if (head.x === data_p1['food'].x && head.y === data_p1['food'].y) {
+    const head = { x: player1_state['snake'][0].x + player1_state['dx'], y: player1_state['snake'][0].y + player1_state['dy'] };
+    player1_state['snake'].unshift(head);
+    if (head.x === player1_state['food'].x && head.y === player1_state['food'].y) {
         // Snake ate the food
-        data_p1['food'].x = Math.floor(Math.random() * canvas_p1.width / gridSize);
-        data_p1['food'].y = Math.floor(Math.random() * canvas_p1.height / gridSize);
-        data_p1['score'] += 1;
+        player1_state['food'].x = Math.floor(Math.random() * canvas_p1.width / gridSize);
+        player1_state['food'].y = Math.floor(Math.random() * canvas_p1.height / gridSize);
+        player1_state['score'] += 1;
+        document.getElementById('score-player1').textContent = `Player 1 Score: ${player1_state['score']}`;
     } else {
-        data_p1['snake'].pop();
+        player1_state['snake'].pop();
     }
-    socket_p1.emit('player_update', { room_code: roomCode, data: data_p1 });
 }
 
 function checkCollision() {
     // Check for collision with the walls or itself
-    const head = data_p1['snake'][0];
+    const head = player1_state['snake'][0];
     if (head.x < 0 || head.x * gridSize >= canvas_p1.width || head.y < 0 || head.y * gridSize >= canvas_p1.height) {
-        data_p1['gameover'] = 1;
-        socket_p1.emit('player_update', { room_code: roomCode, data: data_p1 });
+        player1_state['gameover'] = 1;
     }
-    for (let i = 1; i < data_p1['snake'].length; i++) {
-        if (head.x === data_p1['snake'][i].x && head.y === data_p1['snake'][i].y) {
-            data_p1['gameover'] = 1;
-            socket_p1.emit('player_update', { room_code: roomCode, data: data_p1 });
+    for (let i = 1; i < player1_state['snake'].length; i++) {
+        if (head.x === player1_state['snake'][i].x && head.y === player1_state['snake'][i].y) {
+            player1_state['gameover'] = 1;
             break;
         }
     }
