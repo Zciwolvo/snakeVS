@@ -4,6 +4,7 @@ from flask_cors import CORS
 from uuid import uuid4
 import string
 import random
+import eventlet
 
 
 app = Flask(__name__)
@@ -167,29 +168,94 @@ def snake_vs(room_code):
     else:
         return "Room does not exist"
 
+# Update game state and emit it to all connected clients in a specific room
 
-# Handle player input for Player 1
+
+def update_game_state(room_code):
+    socketio.emit('update_game_state', rooms[room_code], room=room_code)
+
+# Handle player input from the client in a specific room
 
 
-@socketio.on('player_update', namespace='/snakeVS')
-def handle_player_update(data):
+@socketio.on('player_input')
+def handle_player_input(data):
     room_code = data['room_code']
-    player_data = data['data']
-    # Include 'sid' in the data received from the client
-    player_sid = data['sid']
+    player_id = data['player_id']
+    direction = data['direction']
+    move_snake(room_code, player_id, direction)
 
-    if room_code:
-        if player_sid == rooms[room_code]['player1_state']['sid']:
-            rooms[room_code]['player1_state'] = player_data
-            emit('game_state_update_p1', rooms[room_code]['player1_state'],
-                 namespace=fr'/snakeVS', room=room_code)
-        elif player_sid == rooms[room_code]['player2_state']['sid']:
-            rooms[room_code]['player2_state'] = player_data
-            emit('game_state_update_p2', rooms[room_code]['player2_state'],
-                 namespace=fr'/snakeVS', room=room_code)
-        else:
-            return jsonify({'message': "Incorrect session ID from one of the players"})
+# Move the snake based on the direction in a specific room
+
+
+def move_snake(room_code, player_id, direction):
+    player_state = rooms[room_code][f'{player_id}_state']
+    head = player_state['snake'][0].copy()
+
+    if direction == 'up':
+        player_state['dy'] = -1
+        player_state['dx'] = 0
+    elif direction == 'down':
+        player_state['dy'] = 1
+        player_state['dx'] = 0
+    elif direction == 'left':
+        player_state['dx'] = -1
+        player_state['dy'] = 0
+    elif direction == 'right':
+        player_state['dx'] = 1
+        player_state['dy'] = 0
+
+    # Update the snake's position
+    head['x'] += player_state['dx']
+    head['y'] += player_state['dy']
+
+    # Check for collisions with the food
+    if head == player_state['food']:
+        # Move the food to a new random position
+        player_state['food'] = {'x': random.randint(
+            1, 9), 'y': random.randint(1, 9)}
+        player_state['snake'].insert(0, head)
+        player_state['score'] += 1
+    else:
+        # Remove the last segment of the snake
+        player_state['snake'].pop()
+        player_state['snake'].insert(0, head)
+
+    # Check for collisions with the walls or itself
+    if (
+        head['x'] < 0 or head['x'] >= 10 or
+        head['y'] < 0 or head['y'] >= 10 or
+        head in player_state['snake'][1:]
+    ):
+        # Set gameover state and reset the game for the specific player
+        player_state['gameover'] = 1
+        reset_game(room_code, player_id)
+
+    update_game_state(room_code)
+
+# Reset the game state for a specific player in a specific room
+
+
+def reset_game(room_code, player_id):
+    player_state = rooms[room_code][f'{player_id}_state']
+    player_state.update(initial_game_state)
+    update_game_state(room_code)
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
 
 
 if __name__ == '__main__':
+    eventlet.monkey_patch()
     socketio.run(app, debug=True)
